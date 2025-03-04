@@ -1,9 +1,14 @@
 const express = require('express');
 const { SecretManagerServiceClient } = require('@google-cloud/secret-manager');
+const { PubSub } = require('@google-cloud/pubsub');
 const crypto = require('crypto');
 
 const app = express();
 const secretManager = new SecretManagerServiceClient();
+const pubSubClient = new PubSub();
+
+const subscriptionName = process.env.SUBSCRIPTION_PATH;
+const timeout = 60;
 
 app.use(express.json());
 
@@ -11,8 +16,25 @@ const generateKey = () => {
   return crypto.randomBytes(8).toString('hex')
 }
 
+const listenForMessages = () => {
+  const subscription = pubSubClient.subscription(subscriptionName);
+
+  const messageHandler = message => {
+    console.log(`Received message: ${message.data.toString()}`);
+    message.ack();
+  };
+
+  subscription.on('message', messageHandler);
+
+  setTimeout(() => {
+    subscription.removeListener('message', messageHandler);
+    console.log(`${timeout} seconds elapsed, listener removed.`);
+  }, timeout * 1000);
+}
+
 
 app.get('/', (_, res) => {
+  listenForMessages();
   res.status(200).send('Healthy');
 });
 
@@ -65,8 +87,8 @@ app.post('/secret', async (req, res) => {
 
 
 app.get('/logenv', async (req, res) => {
-  console.log(process.env);
-  res.status(200).send(process.env)
+  const values = Object.keys(process.env).filter(key => key.startsWith('SECRET_')).map(k => ({ [k]: process.env[k] }))
+  res.status(200).send(values);
 })
 
 
