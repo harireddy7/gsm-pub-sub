@@ -7,8 +7,6 @@ const app = express();
 const secretManager = new SecretManagerServiceClient();
 const pubSubClient = new PubSub();
 
-const subscriptionName = process.env.SUBSCRIPTION_PATH;
-const timeout = 60;
 
 app.use(express.json());
 
@@ -17,6 +15,9 @@ const generateKey = () => {
 }
 
 const listenForMessages = () => {
+  const subscriptionName = process.env.TH_SUBSCRIPTION_PATH;
+  const timeout = 60;
+  console.log(`Setting up pub sub listener for ${subscriptionName}`);
   const subscription = pubSubClient.subscription(subscriptionName);
 
   const messageHandler = message => {
@@ -34,13 +35,12 @@ const listenForMessages = () => {
 
 
 app.get('/', (_, res) => {
-  listenForMessages();
   res.status(200).send('Healthy');
 });
 
 
 app.post('/', async (req, res) => {
-  console.log(`REQ START::: GSM secret path:: ${process.env.SECRET_PATH}`);
+  console.log(`REQ START::: GSM secret path:: ${process.env.TH_SECRET_PATH}`);
 
   const message = req.body.message;
   console.log(JSON.stringify(req.body));
@@ -51,20 +51,20 @@ app.post('/', async (req, res) => {
   // Update the secret in Secret Manager
   const secretValue = generateKey();
   const [version] = await secretManager.addSecretVersion({
-    parent: process.env.SECRET_PATH,
+    parent: process.env.TH_SECRET_PATH,
     payload: {
       data: Buffer.from(secretValue, 'utf-8'),
     },
   });
 
   console.log(`Added secret version: ${version.name} - ${secretValue}`);
-  res.status(204).send();
+  res.status(204).send(`Added secret version: ${version.name} - ${secretValue}`);
 });
 
 
 app.get('/secret', async (req, res) => {
   const [version] = await secretManager.accessSecretVersion({
-    name: `${process.env.SECRET_PATH}/versions/latest`,
+    name: `${process.env.TH_SECRET_PATH}/versions/latest`,
   });
 
   res.status(200).send(version.payload?.data?.toString());
@@ -75,23 +75,26 @@ app.post('/secret', async (req, res) => {
   // Update the secret in Secret Manager
   const secretValue = generateKey();
   const [version] = await secretManager.addSecretVersion({
-    parent: process.env.SECRET_PATH,
+    parent: process.env.TH_SECRET_PATH,
     payload: {
       data: Buffer.from(secretValue, 'utf-8'),
     },
   });
 
   console.log(`Added secret version: ${version.name} - ${secretValue}`);
-  res.status(204).send(secretValue);
+  res.status(204).send(`Added secret version: ${version.name} - ${secretValue}`);
 });
 
 
 app.get('/logenv', async (req, res) => {
-  const values = Object.keys(process.env).filter(key => key.startsWith('SECRET_')).map(k => ({ [k]: process.env[k] }))
+  const values = Object.keys(process.env).filter(key => key.startsWith('TH_')).map(k => ({ [k]: process.env[k] }))
   res.status(200).send(values);
 })
 
 
 const PORT = process.env.PORT || 8080;
 
-app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+app.listen(PORT, () => {
+  listenForMessages();
+  console.log(`Server listening on port ${PORT}`)}
+);
